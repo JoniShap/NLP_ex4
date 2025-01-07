@@ -125,7 +125,9 @@ def get_one_hot(size, ind):
     :param ind: the entry index to turn to 1
     :return: numpy ndarray which represents the one-hot vector
     """
-    return
+    np_one_hot = np.zeros(size)
+    np_one_hot[ind] = 1
+    return np_one_hot
 
 
 def average_one_hots(sent, word_to_ind):
@@ -136,8 +138,12 @@ def average_one_hots(sent, word_to_ind):
     :param word_to_ind: a mapping between words to indices
     :return:
     """
-    return
 
+    sum_one_hot = np.zeros(len(word_to_ind))
+    for word in sent:
+        new_vec = get_one_hot(len(word_to_ind), word_to_ind[word])
+        sum_one_hot += new_vec
+    return sum_one_hot / len(sent)
 
 def get_word_to_ind(words_list):
     """
@@ -146,7 +152,13 @@ def get_word_to_ind(words_list):
     :param words_list: a list of words
     :return: the dictionary mapping words to the index
     """
-    return
+    counter = 0
+    d = {}
+    for word in words_list:
+        if word not in words_list:
+            d[word] = counter
+            counter += 1
+    return d
 
 
 def sentence_to_embedding(sent, word_to_vec, seq_len, embedding_dim=300):
@@ -287,13 +299,16 @@ class LogLinear(nn.Module):
     general class for the log-linear models for sentiment analysis.
     """
     def __init__(self, embedding_dim):
-        return
+        super(LogLinear, self).__init__()
+        self.linear = nn.Linear(in_features=embedding_dim, out_features=1)
+
 
     def forward(self, x):
-        return
+        return self.linear(x)
 
     def predict(self, x):
-        return
+        logits = self.forward(x)
+        return torch.sigmoid(logits)
 
 
 # ------------------------- training functions -------------
