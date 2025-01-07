@@ -400,7 +400,20 @@ def get_predictions_for_data(model, data_iter):
     :param data_iter: torch iterator as given by the DataManager
     :return:
     """
-    return
+    model.eval()
+
+    all_preds = []
+
+    with torch.no_grad():
+        for batch_data in data_iter:
+            x, y = batch_data
+            y_pred = model.predict(x)
+            y_pred = y_pred.cpu().numpy().flatten()
+            all_preds.append(y_pred)
+
+    return np.concatenate(all_preds)
+
+
 
 
 def train_model(model, data_manager, n_epochs, lr, weight_decay=0.):
@@ -450,6 +463,8 @@ def train_log_linear_with_one_hot():
     train_losses, train_accuracies, val_losses, val_accuracies = train_model(model, data_manager, n_epochs=n_epochs, lr=lr, weight_decay=weight_decay)
 
     test_loss, test_accuracy = evaluate(model, data_manager.get_torch_iterator(TEST), nn.BCEWithLogitsLoss())
+
+
 
 
 
