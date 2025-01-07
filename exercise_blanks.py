@@ -140,7 +140,7 @@ def average_one_hots(sent, word_to_ind):
     """
 
     sum_one_hot = np.zeros(len(word_to_ind))
-    for word in sent:
+    for word in sent.text:
         new_vec = get_one_hot(len(word_to_ind), word_to_ind[word])
         sum_one_hot += new_vec
     return sum_one_hot / len(sent)
@@ -155,7 +155,7 @@ def get_word_to_ind(words_list):
     counter = 0
     d = {}
     for word in words_list:
-        if word not in words_list:
+        if word not in d:
             d[word] = counter
             counter += 1
     return d
@@ -335,8 +335,30 @@ def train_epoch(model, data_iterator, optimizer, criterion):
     :param optimizer: the optimizer object for the training process.
     :param criterion: the criterion object for the training process.
     """
+    model.train()
 
-    return
+    total_loss = 0
+    total_acc = 0
+    total_samples = 0
+
+    for batch_data in data_iterator:
+
+        x, y = batch_data
+        optimizer.zero_grad()
+
+        y_pred = model(x)
+        loss = criterion(y_pred, y)
+        loss.backward()
+        optimizer.step()
+
+
+        total_loss += loss.item() * len(y)
+        total_samples += len(y)
+        total_acc = binary_accuracy(y_pred, y) *  len(y)
+
+    return total_loss / total_samples , total_acc / total_samples
+
+
 
 
 def evaluate(model, data_iterator, criterion):
@@ -347,7 +369,23 @@ def evaluate(model, data_iterator, criterion):
     :param criterion: the loss criterion used for evaluation
     :return: tuple of (average loss over all examples, average accuracy over all examples)
     """
-    return
+    total_loss = 0
+    total_acc = 0
+    total_samples = 0
+
+    for batch_data in data_iterator:
+        x, y = batch_data
+
+        y_pred = model(x)
+        loss = criterion(y_pred, y)
+
+
+        total_loss += loss.item() * len(y)
+        total_samples += len(y)
+        total_acc = binary_accuracy(y_pred, y) * len(y)
+
+    return total_loss / total_samples , total_acc / total_samples
+
 
 
 def get_predictions_for_data(model, data_iter):
