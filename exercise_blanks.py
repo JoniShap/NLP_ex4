@@ -354,7 +354,7 @@ def train_epoch(model, data_iterator, optimizer, criterion):
 
         total_loss += loss.item() * len(y)
         total_samples += len(y)
-        total_acc = binary_accuracy(y_pred, y) *  len(y)
+        total_acc += binary_accuracy(y_pred, y) *  len(y)
 
     return total_loss / total_samples , total_acc / total_samples
 
@@ -369,22 +369,24 @@ def evaluate(model, data_iterator, criterion):
     :param criterion: the loss criterion used for evaluation
     :return: tuple of (average loss over all examples, average accuracy over all examples)
     """
+    model.eval()
     total_loss = 0
     total_acc = 0
     total_samples = 0
 
-    for batch_data in data_iterator:
-        x, y = batch_data
+    with torch.no_grad():
+        for batch_data in data_iterator:
+            x, y = batch_data
 
-        y_pred = model(x)
-        loss = criterion(y_pred, y)
+            y_pred = model(x)
+            loss = criterion(y_pred, y)
 
 
-        total_loss += loss.item() * len(y)
-        total_samples += len(y)
-        total_acc = binary_accuracy(y_pred, y) * len(y)
+            total_loss += loss.item() * len(y)
+            total_samples += len(y)
+            total_acc += binary_accuracy(y_pred, y) * len(y)
 
-    return total_loss / total_samples , total_acc / total_samples
+        return total_loss / total_samples , total_acc / total_samples
 
 
 
@@ -411,14 +413,47 @@ def train_model(model, data_manager, n_epochs, lr, weight_decay=0.):
     :param lr: learning rate to be used for optimization
     :param weight_decay: parameter for l2 regularization
     """
-    return
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    criterion = nn.BCEWithLogitsLoss()
 
+    train_loss_lst = []
+    train_acc_lst = []
+    val_loss_lst = []
+    val_acc_lst = []
+
+    for _ in range(n_epochs):
+        train_loss, train_acc = train_epoch(model, data_manager.get_torch_iterator(TRAIN), optimizer, criterion)
+        val_loss, val_acc = evaluate(model, data_manager.get_torch_iterator(VAL), criterion)
+        train_loss_lst.append(train_loss)
+        train_acc_lst.append(train_acc)
+        val_loss_lst.append(val_loss)
+        val_acc_lst.append(val_acc)
+        print(f"epoch{_+1}/{n_epochs}")
+        print(f"train loss: {train_loss:.4f}, train acc: {train_acc:.4f}, val loss: {val_loss:.4f}, val acc: {val_acc:.4f}")
+
+    return train_loss_lst, train_acc_lst, val_loss_lst, val_acc_lst
 
 def train_log_linear_with_one_hot():
     """
     Here comes your code for training and evaluation of the log linear model with one hot representation.
     """
-    return
+
+
+    data_manager = DataManager(data_type=ONEHOT_AVERAGE, embedding_dim=None)
+    vocab_size = len(data_manager.get_input_shape()[-1])
+    model = LogLinear(vocab_size)
+
+    n_epochs = 20
+    lr  = 0.01
+    weight_decay = 0.001
+
+    train_losses, train_accuracies, val_losses, val_accuracies = train_model(model, data_manager, n_epochs=n_epochs, lr=lr, weight_decay=weight_decay)
+
+    test_loss, test_accuracy = evaluate(model, data_manager.get_torch_iterator(TEST), nn.BCEWithLogitsLoss())
+
+
+
+
 
 
 def train_log_linear_with_w2v():
