@@ -143,7 +143,8 @@ def average_one_hots(sent, word_to_ind):
     for word in sent.text:
         new_vec = get_one_hot(len(word_to_ind), word_to_ind[word])
         sum_one_hot += new_vec
-    return sum_one_hot / len(sent)
+    averaged_vector = sum_one_hot / len(sent.text)
+    return torch.from_numpy(averaged_vector).float()
 
 def get_word_to_ind(words_list):
     """
@@ -316,14 +317,27 @@ class LogLinear(nn.Module):
 
 def binary_accuracy(preds, y):
     """
-    This method returns tha accuracy of the predictions, relative to the labels.
-    You can choose whether to use numpy arrays or tensors here.
-    :param preds: a vector of predictions
-    :param y: a vector of true labels
-    :return: scalar value - (<number of accurate predictions> / <number of examples>)
-    """
+    Calculate prediction accuracy for binary classification.
 
-    return
+    :param preds: model predictions (logits) with shape [batch_size, 1]
+    :param y: true labels with shape [batch_size, 1]
+    :return: accuracy as a float between 0 and 1
+    """
+    # First, apply sigmoid to convert logits to probabilities
+    probabilities = torch.sigmoid(preds)
+
+    # Convert probabilities to binary predictions (0 or 1)
+    # If probability >= 0.5, predict 1; else predict 0
+    y_pred = (probabilities >= 0.5).float()
+
+    # Compare predictions with true labels
+    # This creates a tensor of 1s where predictions match labels, 0s where they don't
+    correct_predictions = (y_pred == y).float()
+
+    # Calculate accuracy by taking the mean of correct predictions
+    accuracy = torch.mean(correct_predictions).item()
+
+    return accuracy
 
 
 def train_epoch(model, data_iterator, optimizer, criterion):
@@ -344,6 +358,8 @@ def train_epoch(model, data_iterator, optimizer, criterion):
     for batch_data in data_iterator:
 
         x, y = batch_data
+        y = y.unsqueeze(1)
+
         optimizer.zero_grad()
 
         y_pred = model(x)
@@ -377,6 +393,7 @@ def evaluate(model, data_iterator, criterion):
     with torch.no_grad():
         for batch_data in data_iterator:
             x, y = batch_data
+            y = y.unsqueeze(1)
 
             y_pred = model(x)
             loss = criterion(y_pred, y)
@@ -446,26 +463,63 @@ def train_model(model, data_manager, n_epochs, lr, weight_decay=0.):
 
     return train_loss_lst, train_acc_lst, val_loss_lst, val_acc_lst
 
+
 def train_log_linear_with_one_hot():
     """
     Here comes your code for training and evaluation of the log linear model with one hot representation.
     """
-
-
     data_manager = DataManager(data_type=ONEHOT_AVERAGE, embedding_dim=None)
-    vocab_size = len(data_manager.get_input_shape()[-1])
+    vocab_size = data_manager.get_input_shape()[-1]
     model = LogLinear(vocab_size)
 
     n_epochs = 20
-    lr  = 0.01
+    lr = 0.01
     weight_decay = 0.001
 
-    train_losses, train_accuracies, val_losses, val_accuracies = train_model(model, data_manager, n_epochs=n_epochs, lr=lr, weight_decay=weight_decay)
+    train_losses, train_accuracies, val_losses, val_accuracies = train_model(
+        model, data_manager, n_epochs=n_epochs, lr=lr, weight_decay=weight_decay
+    )
 
-    test_loss, test_accuracy = evaluate(model, data_manager.get_torch_iterator(TEST), nn.BCEWithLogitsLoss())
+    test_iterator = data_manager.get_torch_iterator(data_subset=TEST)
+    test_loss, test_accuracy = evaluate(model, test_iterator, nn.BCEWithLogitsLoss())
 
+    # Get predictions for special subsets
+    test_sentences = data_manager.sentences[TEST]
 
+    # Get indices for special subsets
+    negated_indices = data_loader.get_negated_polarity_examples(test_sentences)
+    rare_indices = data_loader.get_rare_words_examples(test_sentences, data_manager.sentiment_dataset)
 
+    # Get all test predictions
+    test_predictions = get_predictions_for_data(model, test_iterator)
+
+    # Convert predictions and labels to tensors
+    test_predictions_tensor = torch.tensor(test_predictions)
+    test_labels_tensor = torch.tensor(data_manager.get_labels(TEST))
+
+    # Convert indices to tensors to use for indexing
+    negated_indices_tensor = torch.tensor(negated_indices)
+    rare_indices_tensor = torch.tensor(rare_indices)
+
+    # Calculate accuracy for special subsets using tensors
+    negated_accuracy = binary_accuracy(
+        test_predictions_tensor[negated_indices_tensor].unsqueeze(1),
+        test_labels_tensor[negated_indices_tensor].unsqueeze(1)
+    )
+    rare_accuracy = binary_accuracy(
+        test_predictions_tensor[rare_indices_tensor].unsqueeze(1),
+        test_labels_tensor[rare_indices_tensor].unsqueeze(1)
+    )
+
+    # Print results
+    print("\nTest Results:")
+    print(f"Test Loss: {test_loss:.3f} | Test Accuracy: {test_accuracy:.3f}")
+    print(f"Negated Polarity Accuracy: {negated_accuracy:.3f}")
+    print(f"Rare Words Accuracy: {rare_accuracy:.3f}")
+
+    return train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy
+
+1
 
 
 
@@ -486,7 +540,56 @@ def train_lstm_with_w2v():
     return
 
 
+import matplotlib.pyplot as plt
+
+
+def create_training_plots(train_losses, train_accuracies, val_losses, val_accuracies):
+    """
+    Creates and saves two plots:
+    1. Loss comparison plot (training vs validation)
+    2. Accuracy comparison plot (training vs validation)
+
+    Each plot will help us visualize how the model learns over time and detect potential
+    overfitting or underfitting issues.
+    """
+    # Set up the style for better-looking plots
+    plt.style.use('seaborn')
+
+    # Create a figure with two subplots side by side
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
+
+    # Plot 1: Training and Validation Loss
+    epochs = range(1, len(train_losses) + 1)
+
+    ax1.plot(epochs, train_losses, 'b-', label='Training Loss')
+    ax1.plot(epochs, val_losses, 'r-', label='Validation Loss')
+    ax1.set_title('Model Loss over Epochs')
+    ax1.set_xlabel('Epoch')
+    ax1.set_ylabel('Loss')
+    ax1.legend()
+    ax1.grid(True)
+
+    # Plot 2: Training and Validation Accuracy
+    ax2.plot(epochs, train_accuracies, 'b-', label='Training Accuracy')
+    ax2.plot(epochs, val_accuracies, 'r-', label='Validation Accuracy')
+    ax2.set_title('Model Accuracy over Epochs')
+    ax2.set_xlabel('Epoch')
+    ax2.set_ylabel('Accuracy')
+    ax2.legend()
+    ax2.grid(True)
+
+    # Adjust layout to prevent overlap
+    plt.tight_layout()
+
+    # Save the plots
+    plt.savefig('w2v_training_plots.png')
+
+    # Display the plots
+    plt.show()
+
 if __name__ == '__main__':
-    train_log_linear_with_one_hot()
+    train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy = train_log_linear_with_one_hot()
+    print("test_accuracy:", test_accuracy)
+
     # train_log_linear_with_w2v()
     # train_lstm_with_w2v()
