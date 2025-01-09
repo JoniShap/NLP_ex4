@@ -115,13 +115,8 @@ def get_w2v_average(sent, word_to_vec, embedding_dim):
     :param embedding_dim: the dimension of the word embedding vectors
     :return The average embedding vector as numpy ndarray.
     """
-    full_emb = np.zeros(embedding_dim)
-    count = 0
-    for word in sent.text:
-        if word in word_to_vec:
-            full_emb += word_to_vec[word]
-            count += 1
-    return full_emb / count
+    return
+
 
 def get_one_hot(size, ind):
     """
@@ -455,6 +450,8 @@ def train_log_linear_with_one_hot():
     """
     Here comes your code for training and evaluation of the log linear model with one hot representation.
     """
+
+
     data_manager = DataManager(data_type=ONEHOT_AVERAGE, embedding_dim=None)
     vocab_size = len(data_manager.get_input_shape()[-1])
     model = LogLinear(vocab_size)
@@ -473,25 +470,14 @@ def train_log_linear_with_one_hot():
 
 
 
+
 def train_log_linear_with_w2v():
     """
     Here comes your code for training and evaluation of the log linear model with word embeddings
     representation.
     """
+    return
 
-    data_manager = DataManager(data_type=W2V_AVERAGE, embedding_dim=W2V_EMBEDDING_DIM)
-    embedding_dim = data_manager.get_input_shape()[-1]
-    model = LogLinear(embedding_dim)
-
-    n_epochs = 20
-    lr  = 0.01
-    weight_decay = 0.001
-
-    train_losses, train_accuracies, val_losses, val_accuracies = train_model(model, data_manager, n_epochs=n_epochs, lr=lr, weight_decay=weight_decay)
-
-    test_loss, test_accuracy = evaluate(model, data_manager.get_torch_iterator(TEST), nn.BCEWithLogitsLoss())
-
-    print(f"test loss: {test_loss:.4f}, test acc: {test_accuracy:.4f}")
 
 def train_lstm_with_w2v():
     """
@@ -501,6 +487,6 @@ def train_lstm_with_w2v():
 
 
 if __name__ == '__main__':
-    # train_log_linear_with_one_hot()
-    train_log_linear_with_w2v()
+    train_log_linear_with_one_hot()
+    # train_log_linear_with_w2v()
     # train_lstm_with_w2v()
