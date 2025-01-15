@@ -526,7 +526,7 @@ def train_log_linear_with_one_hot():
 
     return train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy
 
-1
+
 
 
 
@@ -537,7 +537,10 @@ def train_log_linear_with_w2v():
     Here comes your code for training and evaluation of the log linear model with word embeddings
     representation.
     """
-    return
+    data_maneger = DataManager(data_type=W2V_AVERAGE, embedding_dim=W2V_EMBEDDING_DIM)
+    model = LogLinear(W2V_EMBEDDING_DIM)
+
+
 
 
 def train_lstm_with_w2v():
