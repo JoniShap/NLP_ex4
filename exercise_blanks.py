@@ -740,7 +740,7 @@ def create_training_plots(train_losses, train_accuracies, val_losses, val_accura
     plt.show()
 
 if __name__ == '__main__':
-    train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy = train_log_linear_with_w2v()
+    train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy = train_lstm_with_w2v()
     print("test_accuracy:", test_accuracy)
     create_training_plots(train_losses, train_accuracies, val_losses, val_accuracies)
     # train_log_linear_with_w2v()
