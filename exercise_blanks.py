@@ -117,12 +117,19 @@ def get_w2v_average(sent, word_to_vec, embedding_dim):
     """
     full_emb = np.zeros(embedding_dim)
     count = 0
+
+    # Sum up embeddings for words that exist in word_to_vec
     for word in sent.text:
         if word in word_to_vec:
             full_emb += word_to_vec[word]
             count += 1
-    return torch.from_numpy(full_emb / count).float()
 
+    # If no words were found in word_to_vec, return zero vector
+    # Otherwise, return the average
+    if count == 0:
+        return torch.from_numpy(full_emb).float()
+    else:
+        return torch.from_numpy(full_emb / count).float()
 
 
 def get_one_hot(size, ind):
@@ -179,8 +186,16 @@ def sentence_to_embedding(sent, word_to_vec, seq_len, embedding_dim=300):
     :param embedding_dim: the dimension of the w2v embedding
     :return: numpy ndarray of shape (seq_len, embedding_dim) with the representation of the sentence
     """
-    return
+    sentence_embedding = np.zeros((seq_len, embedding_dim))
 
+    # Process up to either sentence length or seq_len, whichever is shorter
+    for i in range(min(len(sent.text), seq_len)):
+        word = sent.text[i]
+        if word in word_to_vec:
+            sentence_embedding[i] = word_to_vec[word]
+        # If word not in word_to_vec, leave as zero vector
+
+    return torch.from_numpy(sentence_embedding).float()
 
 class OnlineDataset(Dataset):
     """
@@ -293,13 +308,51 @@ class LSTM(nn.Module):
     An LSTM for sentiment analysis with architecture as described in the exercise description.
     """
     def __init__(self, embedding_dim, hidden_dim, n_layers, dropout):
-        return
+        super().__init__()
+
+        # Initialize the bidirectional LSTM
+        self.lstm = nn.LSTM(input_size=embedding_dim,
+                            hidden_size=hidden_dim,
+                            num_layers=n_layers,
+                            bidirectional=True,
+                            batch_first=True)
+
+        # Dropout layer before the linear classification layer
+        self.dropout = nn.Dropout(dropout)
+
+        # Linear layer for classification
+        # Input size is hidden_dim*2 because we concatenate forward and backward hidden states
+        self.fc = nn.Linear(hidden_dim * 2, 1)
+
+        self.hidden_dim = hidden_dim
+        self.n_layers = n_layers
 
     def forward(self, text):
-        return
+        # Get LSTM outputs and final hidden states
+        # lstm_out shape: (batch_size, seq_len, hidden_dim*2)
+        # hn shape: (2*n_layers, batch_size, hidden_dim)
+        lstm_out, (hn, cn) = self.lstm(text)
+
+        # Get the final forward and backward hidden states
+        # Reshape hn to separate forward and backward states
+        # Each has shape (n_layers, batch_size, hidden_dim)
+        forward_hidden = hn[-2, :, :]  # Get last layer's forward hidden state
+        backward_hidden = hn[-1, :, :]  # Get last layer's backward hidden state
+
+        # Concatenate forward and backward hidden states
+        # Shape: (batch_size, hidden_dim*2)
+        concatenated = torch.cat((forward_hidden, backward_hidden), dim=1)
+
+        # Apply dropout
+        dropped = self.dropout(concatenated)
+
+        # Project to output space and return logits
+        # Shape: (batch_size, 1)
+        return self.fc(dropped)
 
     def predict(self, text):
-        return
+        # Get logits and apply sigmoid to get probabilities
+        return torch.sigmoid(self.forward(text))
 
 
 class LogLinear(nn.Module):
@@ -537,16 +590,61 @@ def train_log_linear_with_w2v():
     Here comes your code for training and evaluation of the log linear model with word embeddings
     representation.
     """
-    data_maneger = DataManager(data_type=W2V_AVERAGE, embedding_dim=W2V_EMBEDDING_DIM)
+    data_manager = DataManager(data_type=W2V_AVERAGE, embedding_dim=W2V_EMBEDDING_DIM)
     model = LogLinear(W2V_EMBEDDING_DIM)
+    n_epochs = 20
+    lr = 0.01
+    weight_decay = 0.001
+    train_losses, train_accuracies, val_losses, val_accuracies = train_model(
+        model, data_manager, n_epochs=n_epochs, lr=lr, weight_decay=weight_decay
+    )
 
+    test_iterator = data_manager.get_torch_iterator(data_subset=TEST)
+    test_loss, test_accuracy = evaluate(model, test_iterator, nn.BCEWithLogitsLoss())
 
+    # Get predictions for special subsets
+    test_sentences = data_manager.sentences[TEST]
+
+    # Get indices for special subsets
+    negated_indices = data_loader.get_negated_polarity_examples(test_sentences)
+    rare_indices = data_loader.get_rare_words_examples(test_sentences, data_manager.sentiment_dataset)
+
+    # Get all test predictions
+    test_predictions = get_predictions_for_data(model, test_iterator)
+
+    # Convert predictions and labels to tensors
+    test_predictions_tensor = torch.tensor(test_predictions)
+    test_labels_tensor = torch.tensor(data_manager.get_labels(TEST))
+
+    # Convert indices to tensors to use for indexing
+    negated_indices_tensor = torch.tensor(negated_indices)
+    rare_indices_tensor = torch.tensor(rare_indices)
+
+    # Calculate accuracy for special subsets using tensors
+    negated_accuracy = binary_accuracy(
+        test_predictions_tensor[negated_indices_tensor].unsqueeze(1),
+        test_labels_tensor[negated_indices_tensor].unsqueeze(1)
+    )
+    rare_accuracy = binary_accuracy(
+        test_predictions_tensor[rare_indices_tensor].unsqueeze(1),
+        test_labels_tensor[rare_indices_tensor].unsqueeze(1)
+    )
+
+    # Print results
+    print("\nTest Results:")
+    print(f"Test Loss: {test_loss:.3f} | Test Accuracy: {test_accuracy:.3f}")
+    print(f"Negated Polarity Accuracy: {negated_accuracy:.3f}")
+    print(f"Rare Words Accuracy: {rare_accuracy:.3f}")
+
+    return train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy
 
 
 def train_lstm_with_w2v():
     """
     Here comes your code for training and evaluation of the LSTM model.
     """
+    data_manager = DataManager(data_type=W2V_AVERAGE, embedding_dim=W2V_EMBEDDING_DIM)
+    model = LSTM()
     return
 
 
@@ -598,7 +696,7 @@ def create_training_plots(train_losses, train_accuracies, val_losses, val_accura
     plt.show()
 
 if __name__ == '__main__':
-    train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy = train_log_linear_with_one_hot()
+    train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy = train_log_linear_with_w2v()
     print("test_accuracy:", test_accuracy)
     create_training_plots(train_losses, train_accuracies, val_losses, val_accuracies)
     # train_log_linear_with_w2v()
