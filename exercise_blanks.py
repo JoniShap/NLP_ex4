@@ -643,9 +643,53 @@ def train_lstm_with_w2v():
     """
     Here comes your code for training and evaluation of the LSTM model.
     """
-    data_manager = DataManager(data_type=W2V_AVERAGE, embedding_dim=W2V_EMBEDDING_DIM)
-    model = LSTM()
-    return
+    data_manager = DataManager(data_type=W2V_SEQUENCE, embedding_dim=W2V_EMBEDDING_DIM)
+    model = LSTM(embedding_dim=W2V_EMBEDDING_DIM, hidden_dim=128, n_layers=2, dropout=0.5)
+    n_epochs = 20
+    lr = 0.001
+    weight_decay = 0.0001
+    train_losses, train_accuracies, val_losses, val_accuracies = train_model(
+        model, data_manager, n_epochs=n_epochs, lr=lr, weight_decay=weight_decay
+    )
+
+    test_iterator = data_manager.get_torch_iterator(data_subset=TEST)
+    test_loss, test_accuracy = evaluate(model, test_iterator, nn.BCEWithLogitsLoss())
+
+    # Get predictions for special subsets
+    test_sentences = data_manager.sentences[TEST]
+
+    # Get indices for special subsets
+    negated_indices = data_loader.get_negated_polarity_examples(test_sentences)
+    rare_indices = data_loader.get_rare_words_examples(test_sentences, data_manager.sentiment_dataset)
+
+    # Get all test predictions
+    test_predictions = get_predictions_for_data(model, test_iterator)
+
+    # Convert predictions and labels to tensors
+    test_predictions_tensor = torch.tensor(test_predictions)
+    test_labels_tensor = torch.tensor(data_manager.get_labels(TEST))
+
+    # Convert indices to tensors to use for indexing
+    negated_indices_tensor = torch.tensor(negated_indices)
+    rare_indices_tensor = torch.tensor(rare_indices)
+
+    # Calculate accuracy for special subsets using tensors
+    negated_accuracy = binary_accuracy(
+        test_predictions_tensor[negated_indices_tensor].unsqueeze(1),
+        test_labels_tensor[negated_indices_tensor].unsqueeze(1)
+    )
+    rare_accuracy = binary_accuracy(
+        test_predictions_tensor[rare_indices_tensor].unsqueeze(1),
+        test_labels_tensor[rare_indices_tensor].unsqueeze(1)
+    )
+
+    # Print results
+    print("\nTest Results:")
+    print(f"Test Loss: {test_loss:.3f} | Test Accuracy: {test_accuracy:.3f}")
+    print(f"Negated Polarity Accuracy: {negated_accuracy:.3f}")
+    print(f"Rare Words Accuracy: {rare_accuracy:.3f}")
+
+    return train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy
 
 
 import matplotlib.pyplot as plt
