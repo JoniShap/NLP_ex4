@@ -6,6 +6,8 @@ import numpy as np
 import os
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 import operator
+
+import Transformer
 import data_loader
 import pickle
 import tqdm
@@ -477,19 +479,23 @@ def get_predictions_for_data(model, data_iter):
     :param data_iter: torch iterator as given by the DataManager
     :return:
     """
-    model.eval()
-
+    model.eval()  # Set model to evaluation mode
+    device = next(model.parameters()).device  # Get model's device
     all_preds = []
 
-    with torch.no_grad():
-        for batch_data in data_iter:
-            x, y = batch_data
+    with torch.no_grad():  # Disable gradient computation
+        for x, _ in data_iter:
+            # Move input to the same device as model
+            x = x.to(device)
+
+            # Get predictions
             y_pred = model.predict(x)
+
+            # Move predictions to CPU and convert to numpy
             y_pred = y_pred.cpu().numpy().flatten()
             all_preds.append(y_pred)
 
     return np.concatenate(all_preds)
-
 
 
 
@@ -583,6 +589,9 @@ def train_log_linear_with_one_hot():
 
 
 
+def print_sentences(sentences):
+    for sentence in sentences:
+        print(sentence)
 
 
 def train_log_linear_with_w2v():
@@ -604,34 +613,69 @@ def train_log_linear_with_w2v():
 
     # Get predictions for special subsets
     test_sentences = data_manager.sentences[TEST]
+    print(f"\nTotal number of test sentences: {len(test_sentences)}")
 
     # Get indices for special subsets
     negated_indices = data_loader.get_negated_polarity_examples(test_sentences)
-    rare_indices = data_loader.get_rare_words_examples(test_sentences, data_manager.sentiment_dataset)
+    rare_indices = data_loader.get_rare_words_examples(test_sentences, data_manager.sentiment_dataset, num_sentences=60)
+
+    print(f"Number of negated polarity examples: {len(negated_indices)}")
+    print(f"Number of rare word examples: {len(rare_indices)}")
+    print(f"Negated indices range: min={min(negated_indices)}, max={max(negated_indices)}")
+    print(f"Rare indices range: min={min(rare_indices)}, max={max(rare_indices)}")
 
     # Get all test predictions
     test_predictions = get_predictions_for_data(model, test_iterator)
+    print(
+        f"\nShape of test predictions: {test_predictions.shape if hasattr(test_predictions, 'shape') else len(test_predictions)}")
 
     # Convert predictions and labels to tensors
     test_predictions_tensor = torch.tensor(test_predictions)
     test_labels_tensor = torch.tensor(data_manager.get_labels(TEST))
 
+    print(f"Shape of test_predictions_tensor: {test_predictions_tensor.shape}")
+    print(f"Shape of test_labels_tensor: {test_labels_tensor.shape}")
+
+    # Print some sample predictions and labels
+    print("\nSample predictions and labels:")
+    for i in range(min(5, len(test_predictions))):
+        print(f"Index {i}: Prediction={test_predictions_tensor[i]:.3f}, Label={test_labels_tensor[i]}")
+
     # Convert indices to tensors to use for indexing
     negated_indices_tensor = torch.tensor(negated_indices)
     rare_indices_tensor = torch.tensor(rare_indices)
 
+    # Print some negated examples
+    print("\nSample negated examples:")
+    for i in range(min(5, len(negated_indices))):
+        idx = negated_indices[i]
+        print(f"Index {idx}: Prediction={test_predictions_tensor[idx]:.3f}, Label={test_labels_tensor[idx]}")
+        print(f"Original sentence: {' '.join(test_sentences[idx].text)}")
+
+    # Print some rare word examples
+    print("\nSample rare word examples:")
+    for i in range(min(5, len(rare_indices))):
+        idx = rare_indices[i]
+        print(f"Index {idx}: Prediction={test_predictions_tensor[idx]:.3f}, Label={test_labels_tensor[idx]}")
+        print(f"Original sentence: {' '.join(test_sentences[idx].text)}")
+
     # Calculate accuracy for special subsets using tensors
-    negated_accuracy = binary_accuracy(
-        test_predictions_tensor[negated_indices_tensor].unsqueeze(1),
-        test_labels_tensor[negated_indices_tensor].unsqueeze(1)
-    )
-    rare_accuracy = binary_accuracy(
-        test_predictions_tensor[rare_indices_tensor].unsqueeze(1),
-        test_labels_tensor[rare_indices_tensor].unsqueeze(1)
-    )
+    negated_predictions = test_predictions_tensor[negated_indices_tensor].unsqueeze(1)
+    negated_labels = test_labels_tensor[negated_indices_tensor].unsqueeze(1)
+    rare_predictions = test_predictions_tensor[rare_indices_tensor].unsqueeze(1)
+    rare_labels = test_labels_tensor[rare_indices_tensor].unsqueeze(1)
+
+    print("\nShapes before accuracy calculation:")
+    print(f"Negated predictions shape: {negated_predictions.shape}")
+    print(f"Negated labels shape: {negated_labels.shape}")
+    print(f"Rare predictions shape: {rare_predictions.shape}")
+    print(f"Rare labels shape: {rare_labels.shape}")
+
+    negated_accuracy = binary_accuracy(negated_predictions, negated_labels)
+    rare_accuracy = binary_accuracy(rare_predictions, rare_labels)
 
     # Print results
-    print("\nTest Results:")
+    print("\nFinal Results:")
     print(f"Test Loss: {test_loss:.3f} | Test Accuracy: {test_accuracy:.3f}")
     print(f"Negated Polarity Accuracy: {negated_accuracy:.3f}")
     print(f"Rare Words Accuracy: {rare_accuracy:.3f}")
@@ -644,8 +688,8 @@ def train_lstm_with_w2v():
     Here comes your code for training and evaluation of the LSTM model.
     """
     data_manager = DataManager(data_type=W2V_SEQUENCE, embedding_dim=W2V_EMBEDDING_DIM)
-    model = LSTM(embedding_dim=W2V_EMBEDDING_DIM, hidden_dim=128, n_layers=2, dropout=0.5)
-    n_epochs = 20
+    model = LSTM(embedding_dim=W2V_EMBEDDING_DIM, hidden_dim=100, n_layers=1, dropout=0.5)
+    n_epochs = 4
     lr = 0.001
     weight_decay = 0.0001
     train_losses, train_accuracies, val_losses, val_accuracies = train_model(
@@ -700,12 +744,9 @@ def create_training_plots(train_losses, train_accuracies, val_losses, val_accura
     Creates and saves two plots:
     1. Loss comparison plot (training vs validation)
     2. Accuracy comparison plot (training vs validation)
-
-    Each plot will help us visualize how the model learns over time and detect potential
-    overfitting or underfitting issues.
     """
-    # Set up the style for better-looking plots
-    plt.style.use('seaborn')
+    # Import required libraries
+    import matplotlib.pyplot as plt
 
     # Create a figure with two subplots side by side
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
@@ -713,35 +754,42 @@ def create_training_plots(train_losses, train_accuracies, val_losses, val_accura
     # Plot 1: Training and Validation Loss
     epochs = range(1, len(train_losses) + 1)
 
-    ax1.plot(epochs, train_losses, 'b-', label='Training Loss')
-    ax1.plot(epochs, val_losses, 'r-', label='Validation Loss')
-    ax1.set_title('Model Loss over Epochs')
-    ax1.set_xlabel('Epoch')
-    ax1.set_ylabel('Loss')
-    ax1.legend()
-    ax1.grid(True)
+    # Loss plot
+    ax1.plot(epochs, train_losses, 'b-', linewidth=2, label='Training Loss')
+    ax1.plot(epochs, val_losses, 'r-', linewidth=2, label='Validation Loss')
+    ax1.set_title('Model Loss over Epochs', fontsize=12, pad=10)
+    ax1.set_xlabel('Epoch', fontsize=10)
+    ax1.set_ylabel('Loss', fontsize=10)
+    ax1.legend(fontsize=10)
+    ax1.grid(True, linestyle='--', alpha=0.7)
+    ax1.tick_params(labelsize=9)
 
-    # Plot 2: Training and Validation Accuracy
-    ax2.plot(epochs, train_accuracies, 'b-', label='Training Accuracy')
-    ax2.plot(epochs, val_accuracies, 'r-', label='Validation Accuracy')
-    ax2.set_title('Model Accuracy over Epochs')
-    ax2.set_xlabel('Epoch')
-    ax2.set_ylabel('Accuracy')
-    ax2.legend()
-    ax2.grid(True)
+    # Accuracy plot
+    ax2.plot(epochs, train_accuracies, 'b-', linewidth=2, label='Training Accuracy')
+    ax2.plot(epochs, val_accuracies, 'r-', linewidth=2, label='Validation Accuracy')
+    ax2.set_title('Model Accuracy over Epochs', fontsize=12, pad=10)
+    ax2.set_xlabel('Epoch', fontsize=10)
+    ax2.set_ylabel('Accuracy', fontsize=10)
+    ax2.legend(fontsize=10)
+    ax2.grid(True, linestyle='--', alpha=0.7)
+    ax2.tick_params(labelsize=9)
 
     # Adjust layout to prevent overlap
-    plt.tight_layout()
+    plt.tight_layout(pad=2.0)
 
-    # Save the plots
-    plt.savefig('w2v_training_plots.png')
+    # Save the plots with high DPI for better quality
+    plt.savefig('training_plots.png', dpi=300, bbox_inches='tight')
 
     # Display the plots
     plt.show()
 
+    # Close the figure to free memory
+    plt.close()
+
 if __name__ == '__main__':
-    train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy = train_lstm_with_w2v()
+    # Transformer.train_transformer_for_sentiment()
+    train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy = train_log_linear_with_w2v()
     print("test_accuracy:", test_accuracy)
     create_training_plots(train_losses, train_accuracies, val_losses, val_accuracies)
-    # train_log_linear_with_w2v()
+    # # train_log_linear_with_w2v()
     # train_lstm_with_w2v()
