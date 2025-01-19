@@ -568,20 +568,22 @@ def train_log_linear_with_one_hot():
     rare_indices_tensor = torch.tensor(rare_indices)
 
     # Calculate accuracy for special subsets using tensors
-    negated_accuracy = binary_accuracy(
-        test_predictions_tensor[negated_indices_tensor].unsqueeze(1),
-        test_labels_tensor[negated_indices_tensor].unsqueeze(1)
-    )
-    rare_accuracy = binary_accuracy(
-        test_predictions_tensor[rare_indices_tensor].unsqueeze(1),
-        test_labels_tensor[rare_indices_tensor].unsqueeze(1)
-    )
+    negated_predictions = test_predictions_tensor[negated_indices_tensor].unsqueeze(1)
+    negated_labels = test_labels_tensor[negated_indices_tensor].unsqueeze(1)
+    rare_predictions = test_predictions_tensor[rare_indices_tensor].unsqueeze(1)
+    rare_labels = test_labels_tensor[rare_indices_tensor].unsqueeze(1)
+    # Calculate accuracy manually for verification
+    rare_correct = ((rare_predictions >= 0.5).float() == rare_labels).float().mean()
+    negated_correct = ((negated_predictions >= 0.5).float() == negated_labels).float().mean()
+
+    print(f"\nManually calculated rare accuracy: {rare_correct:.3f}")
+    print(f"\nManually calculated negated accuracy: {negated_correct:.3f}")
+
 
     # Print results
     print("\nTest Results:")
     print(f"Test Loss: {test_loss:.3f} | Test Accuracy: {test_accuracy:.3f}")
-    print(f"Negated Polarity Accuracy: {negated_accuracy:.3f}")
-    print(f"Rare Words Accuracy: {rare_accuracy:.3f}")
+
 
     return train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy
 
@@ -615,14 +617,32 @@ def train_log_linear_with_w2v():
     test_sentences = data_manager.sentences[TEST]
     print(f"\nTotal number of test sentences: {len(test_sentences)}")
 
+    # Debug test sentences
+    print("\nFirst 5 test sentences with their sentiment values:")
+    for i, sent in enumerate(test_sentences[:5]):
+        print(f"Sentence {i}: {' '.join(sent.text)}")
+        print(f"Sentiment value: {sent.sentiment_val}, Sentiment class: {sent.sentiment_class}")
+
     # Get indices for special subsets
     negated_indices = data_loader.get_negated_polarity_examples(test_sentences)
     rare_indices = data_loader.get_rare_words_examples(test_sentences, data_manager.sentiment_dataset, num_sentences=60)
 
-    print(f"Number of negated polarity examples: {len(negated_indices)}")
+    print(f"\nNumber of negated polarity examples: {len(negated_indices)}")
     print(f"Number of rare word examples: {len(rare_indices)}")
     print(f"Negated indices range: min={min(negated_indices)}, max={max(negated_indices)}")
     print(f"Rare indices range: min={min(rare_indices)}, max={max(rare_indices)}")
+
+    # Debug rare words selection
+    print("\nAnalyzing rare words examples:")
+    word_counts = data_manager.sentiment_dataset.get_train_word_counts()
+    for i, idx in enumerate(rare_indices[:5]):
+        sent = test_sentences[idx]
+        print(f"\nRare example {i}:")
+        print(f"Sentence: {' '.join(sent.text)}")
+        print("Word frequencies in training set:")
+        for word in sent.text:
+            count = word_counts.get(word, 0)
+            print(f"  {word}: {count}")
 
     # Get all test predictions
     test_predictions = get_predictions_for_data(model, test_iterator)
@@ -636,28 +656,45 @@ def train_log_linear_with_w2v():
     print(f"Shape of test_predictions_tensor: {test_predictions_tensor.shape}")
     print(f"Shape of test_labels_tensor: {test_labels_tensor.shape}")
 
-    # Print some sample predictions and labels
-    print("\nSample predictions and labels:")
-    for i in range(min(5, len(test_predictions))):
-        print(f"Index {i}: Prediction={test_predictions_tensor[i]:.3f}, Label={test_labels_tensor[i]}")
+    # Debug predictions distribution
+    print("\nPredictions statistics:")
+    print(f"Mean prediction: {test_predictions_tensor.mean():.3f}")
+    print(f"Std prediction: {test_predictions_tensor.std():.3f}")
+    print(f"Min prediction: {test_predictions_tensor.min():.3f}")
+    print(f"Max prediction: {test_predictions_tensor.max():.3f}")
+
+    # Print prediction counts
+    pred_binary = (test_predictions_tensor >= 0.5).float()
+    print(f"\nBinary prediction distribution:")
+    print(f"Zeros: {(pred_binary == 0).sum()}")
+    print(f"Ones: {(pred_binary == 1).sum()}")
 
     # Convert indices to tensors to use for indexing
     negated_indices_tensor = torch.tensor(negated_indices)
     rare_indices_tensor = torch.tensor(rare_indices)
 
-    # Print some negated examples
-    print("\nSample negated examples:")
-    for i in range(min(5, len(negated_indices))):
-        idx = negated_indices[i]
-        print(f"Index {idx}: Prediction={test_predictions_tensor[idx]:.3f}, Label={test_labels_tensor[idx]}")
-        print(f"Original sentence: {' '.join(test_sentences[idx].text)}")
-
-    # Print some rare word examples
-    print("\nSample rare word examples:")
-    for i in range(min(5, len(rare_indices))):
+    # Detailed analysis of rare words predictions
+    print("\nDetailed rare words analysis:")
+    rare_preds = test_predictions_tensor[rare_indices_tensor]
+    rare_labels = test_labels_tensor[rare_indices_tensor]
+    rare_binary_preds = (rare_preds >= 0.5).float()
+    print(f"Rare predictions mean: {rare_preds.mean():.3f}")
+    print(f"Rare predictions distribution:")
+    print(f"Zeros: {(rare_binary_preds == 0).sum()}")
+    print(f"Ones: {(rare_binary_preds == 1).sum()}")
+    print("\nRare words prediction details:")
+    for i in range(min(10, len(rare_indices))):
         idx = rare_indices[i]
-        print(f"Index {idx}: Prediction={test_predictions_tensor[idx]:.3f}, Label={test_labels_tensor[idx]}")
-        print(f"Original sentence: {' '.join(test_sentences[idx].text)}")
+        pred = test_predictions_tensor[idx]
+        label = test_labels_tensor[idx]
+        binary_pred = 1 if pred >= 0.5 else 0
+        correct = binary_pred == label
+        print(f"Example {i}:")
+        print(f"  Sentence: {' '.join(test_sentences[idx].text)}")
+        print(f"  Raw prediction: {pred:.3f}")
+        print(f"  Binary prediction: {binary_pred}")
+        print(f"  True label: {label}")
+        print(f"  Correct: {correct}")
 
     # Calculate accuracy for special subsets using tensors
     negated_predictions = test_predictions_tensor[negated_indices_tensor].unsqueeze(1)
@@ -665,20 +702,31 @@ def train_log_linear_with_w2v():
     rare_predictions = test_predictions_tensor[rare_indices_tensor].unsqueeze(1)
     rare_labels = test_labels_tensor[rare_indices_tensor].unsqueeze(1)
 
+    # Debug accuracy calculation
+    print("\nAccuracy calculation debug:")
+    print("Sample of 5 rare predictions vs labels:")
+    for i in range(5):
+        print(f"Pred: {rare_predictions[i].item():.3f}, Label: {rare_labels[i].item()}")
+
+    # Calculate accuracy manually for verification
+    rare_correct = ((rare_predictions >= 0.5).float() == rare_labels).float().mean()
+    negated_correct = ((negated_predictions >= 0.5).float() == negated_labels).float().mean()
+
+    print(f"\nManually calculated rare accuracy: {rare_correct:.3f}")
+    print(f"\nManually calculated negated accuracy: {negated_correct:.3f}")
+
     print("\nShapes before accuracy calculation:")
     print(f"Negated predictions shape: {negated_predictions.shape}")
     print(f"Negated labels shape: {negated_labels.shape}")
     print(f"Rare predictions shape: {rare_predictions.shape}")
     print(f"Rare labels shape: {rare_labels.shape}")
 
-    negated_accuracy = binary_accuracy(negated_predictions, negated_labels)
-    rare_accuracy = binary_accuracy(rare_predictions, rare_labels)
+
 
     # Print results
     print("\nFinal Results:")
     print(f"Test Loss: {test_loss:.3f} | Test Accuracy: {test_accuracy:.3f}")
-    print(f"Negated Polarity Accuracy: {negated_accuracy:.3f}")
-    print(f"Rare Words Accuracy: {rare_accuracy:.3f}")
+
 
     return train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy
 
@@ -718,20 +766,22 @@ def train_lstm_with_w2v():
     rare_indices_tensor = torch.tensor(rare_indices)
 
     # Calculate accuracy for special subsets using tensors
-    negated_accuracy = binary_accuracy(
-        test_predictions_tensor[negated_indices_tensor].unsqueeze(1),
-        test_labels_tensor[negated_indices_tensor].unsqueeze(1)
-    )
-    rare_accuracy = binary_accuracy(
-        test_predictions_tensor[rare_indices_tensor].unsqueeze(1),
-        test_labels_tensor[rare_indices_tensor].unsqueeze(1)
-    )
+    negated_predictions = test_predictions_tensor[negated_indices_tensor].unsqueeze(1)
+    negated_labels = test_labels_tensor[negated_indices_tensor].unsqueeze(1)
+    rare_predictions = test_predictions_tensor[rare_indices_tensor].unsqueeze(1)
+    rare_labels = test_labels_tensor[rare_indices_tensor].unsqueeze(1)
+    # Calculate accuracy manually for verification
+    rare_correct = ((rare_predictions >= 0.5).float() == rare_labels).float().mean()
+    negated_correct = ((negated_predictions >= 0.5).float() == negated_labels).float().mean()
+
+    print(f"\nManually calculated rare accuracy: {rare_correct:.3f}")
+    print(f"\nManually calculated negated accuracy: {negated_correct:.3f}")
+
+
 
     # Print results
     print("\nTest Results:")
     print(f"Test Loss: {test_loss:.3f} | Test Accuracy: {test_accuracy:.3f}")
-    print(f"Negated Polarity Accuracy: {negated_accuracy:.3f}")
-    print(f"Rare Words Accuracy: {rare_accuracy:.3f}")
 
     return train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy
 
@@ -788,7 +838,7 @@ def create_training_plots(train_losses, train_accuracies, val_losses, val_accura
 
 if __name__ == '__main__':
     # Transformer.train_transformer_for_sentiment()
-    train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy = train_log_linear_with_w2v()
+    train_losses, train_accuracies, val_losses, val_accuracies, test_accuracy = train_lstm_with_w2v()
     print("test_accuracy:", test_accuracy)
     create_training_plots(train_losses, train_accuracies, val_losses, val_accuracies)
     # # train_log_linear_with_w2v()
